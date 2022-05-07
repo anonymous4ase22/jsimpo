@@ -1,4 +1,5 @@
 import json
+from operator import ne
 import js2py
 import os, sys
 import divide_ob
@@ -184,9 +185,9 @@ def unfoldReturn(node, function):
                         continue
             unfoldReturn(node.get(key), function)
     elif type(node) == list:
-        cnt = -1
+        cntNode = -1
         for next in node:
-            cnt = cnt + 1
+            cntNode = cntNode + 1
             if type(next) == dict and next.get('type') == 'CallExpression' and type(next.get('callee')) == dict and next.get('callee').get('type') == 'MemberExpression' and next.get('callee').get('computed') == True:
                 callee = next.get('callee')
                 if callee.get('object').get('type') == 'Identifier' and callee.get('object').get('name') == function[0]:
@@ -202,7 +203,11 @@ def unfoldReturn(node, function):
                             cnt = cnt + 1
                             mapping[argus.get('name')] = next.get('arguments')[cnt]
                         repParameter(newNode, mapping)
-                        node[cnt] = newNode
+                        # if cnt >= len(node):
+                        #     print(cnt, node)
+                        #     print(newNode)
+                        #     print(function)
+                        node[cntNode] = newNode
                         continue
             unfoldReturn(next, function)
 
@@ -248,11 +253,42 @@ def unfoldValue(node, function):
         for key in node.keys():
             next = node.get(key)
             # print(next)
+            if type(next) == dict and next.get('type') == 'MemberExpression' and next.get('computed') == True:
+                if next.get('object').get('type') == 'Identifier' and next.get('object').get('name') == function[0]:
+                    if next.get('property').get('type') == 'Literal' and next.get('property').get('value') == function[1]:
+                        newNode = {}
+                        # print('aaa')
+                        newNode = copy.deepcopy(function[2])
+                        node[key] = newNode
+                        continue
+            unfoldValue(node.get(key), function)
+    elif type(node) == list:
+        cnt = -1
+        for next in node:
+            cnt = cnt + 1
+            if type(next) == dict and next.get('type') == 'MemberExpression' and next.get('computed') == True:
+                if next.get('object').get('type') == 'Identifier' and next.get('object').get('name') == function[0]:
+                    if next.get('property').get('type') == 'Literal' and next.get('property').get('value') == function[1]:
+                        # print('bbb')
+                        newNode = {}
+                        newNode = copy.deepcopy(function[2])
+                        node[cnt] = newNode
+                        continue
+            unfoldValue(next, function)
+
+
+
+def unfoldValue_old(node, function):
+    if type(node) == dict:
+        for key in node.keys():
+            next = node.get(key)
+            # print(next)
             if type(next) == dict and next.get('type') == 'CallExpression' and type(next.get('callee')) == dict and next.get('callee').get('type') == 'MemberExpression' and next.get('callee').get('computed') == True:
                 callee = next.get('callee')
                 if callee.get('object').get('type') == 'Identifier' and callee.get('object').get('name') == function[0]:
                     if callee.get('property').get('type') == 'Literal' and callee.get('property').get('value') == function[1]:
                         newNode = {}
+                        # print('aaa')
                         # print(function[2].get('body'))
                         # retNode = (function[2].get('body').get('body')[0]).get('argument')
                         newNode = copy.deepcopy(function[2])
@@ -279,6 +315,7 @@ def unfoldValue(node, function):
                 callee = next.get('callee')
                 if callee.get('object').get('type') == 'Identifier' and callee.get('object').get('name') == function[0]:
                     if callee.get('property').get('type') == 'Literal' and callee.get('property').get('value') == function[1]:
+                        # print('bbb')
                         newNode = {}
                         # print(function[2].get('body'))
                         # retNode = (function[2].get('body').get('body')[0]).get('argument')
@@ -336,15 +373,15 @@ def innerSimulation(syntax):
             DFS_empty(funNode)
         resValue = []
         DFS_innervalue(funNode, resValue)
-        for function in res:
+        for function in resValue:
             # print('function', function)
-            unfoldReturn(funNode, function)
+            unfoldValue(funNode, function)
             DFS_empty(funNode)
 
         
 def simulate(inputFileName):
     t1 = time.time()
-    inputFile = './jsdata/rand_jsjiami/' + inputFileName
+    inputFile = './jsdata2/rand_jsjiami/' + inputFileName
     # file = open(inputFile)
     # if not os.path.exists(inputFile + '-fun'):
     #     os.mkdir(inputFile + '-fun')
@@ -377,7 +414,7 @@ def simulate(inputFileName):
 
     toMove = []
     for funName in illegalFun.keys():
-        illegalName = './jsdata/rand_temp/' + inputFileName + '.json'
+        illegalName = './jsdata2/rand_temp/' + inputFileName + '.json'
         print('illeagalName', illegalName)
         illegalFile = open(illegalName, 'w')
         wrapper = {}
@@ -410,7 +447,7 @@ def simulate(inputFileName):
 
     t4 = time.time()
     innerSimulation(syntax)
-    outputFile = './jsdata/rand_jsjiami_recover/' + inputFileName
+    outputFile = './jsdata2/rand_jsjiami_recover/' + inputFileName
     newFile = open(outputFile + '-fixed.json', 'w')
     newFile.write(json.dumps(syntax, indent = 4))
     newFile.close()
@@ -700,6 +737,89 @@ def detect_global2(inputFile):
                 if declarations.get('expression').get('type') == 'SequenceExpression':
                     return True
     return False            
+
+        
+def simulate3(inputFileName):
+    t1 = time.time()
+    inputFile = './jsdata3/rand_jsjiami/' + inputFileName
+    # file = open(inputFile)
+    # if not os.path.exists(inputFile + '-fun'):
+    #     os.mkdir(inputFile + '-fun')
+    srcFile = os.popen('node pparse.js ' + inputFile, 'r')# Not sure ...'r', 1)
+    syntax = json.loads(srcFile.read())
+    srcFile.close()
+
+    t2 = time.time()
+    # syntax = json.load(file)
+    illegalFun = call_graph(syntax.get('body'))
+    jsFuns = {}
+    partial = []
+    newProgram = {'type': 'Program', 'body': partial, 'sourceType': 'script'}
+    counter = 0
+
+    # divide_ob.moveDeclaration(syntax)
+
+    for declarations in syntax.get('body'):
+        counter = counter + 1
+        if counter > 3:
+            break
+        if declarations.get('type') != 'VariableDeclaration':
+            partial.append(declarations)
+            # print('wow', counter)
+        elif len(declarations) <= 0:
+            continue
+        elif declarations.get('declarations')[0].get('type') != 'VariableDeclarator' or 'init' not in declarations.get('declarations')[0].keys() or declarations.get('declarations')[0].get('init').get('type') != 'FunctionExpression':
+            partial.append(declarations)
+            # print('wow', counter)
+
+    toMove = []
+    for funName in illegalFun.keys():
+        illegalName = './jsdata3/rand_temp/' + inputFileName + '.json'
+        print('illeagalName', illegalName)
+        illegalFile = open(illegalName, 'w')
+        wrapper = {}
+        for wrapperName in syntax.get('body'):
+            if wrapperName.get('type') == 'VariableDeclaration' and illegalFun.get(funName) in wrapperName.get('declarations'):
+                wrapper = wrapperName
+        # wrapper = {'type': 'VariableDeclaration', 'declarations':[illegalFun.get(funName)], 'kind': 'var'}
+        partial.append(wrapper)
+        illegalFile.write(json.dumps(newProgram))
+        partial.remove(wrapper)
+        illegalFile.close()
+        toMove.append(wrapper)
+
+        dstFile = os.popen('node ./pregenerate.js ' + illegalName, 'r')
+        dstRes = dstFile.read()
+        dstFile.close()
+        # illegalJS = open(illegalName + '-new.js', 'r+')
+        jsFuns[funName] = js2py.eval_js(dstRes)
+        # illegalJS.close()
+
+    t3 = time.time()
+    for funName in jsFuns.keys():
+        DFS_replace(syntax.get('body'), funName, jsFuns.get(funName))
+
+    for funNode in partial:
+        syntax.get('body').remove(funNode)
+    
+    for funNode in toMove:
+        syntax.get('body').remove(funNode)
+
+    t4 = time.time()
+    innerSimulation(syntax)
+    outputFile = './jsdata3/rand_jsjiami_recover/' + inputFileName
+    newFile = open(outputFile + '-fixed.json', 'w')
+    newFile.write(json.dumps(syntax, indent = 4))
+    newFile.close()
+    # print(syntax)
+    os.system('node ./regenerate.js ' + outputFile + '-fixed.json ' + outputFile)
+    # os.system('node ./parse.js ' + outputFile + '-fixed.json-new.js ' + outputFile + '-fixed.json')
+    # DFS(syntax, Isredunduncy, 0)
+    # writeNode(syntax.get('body')[0])
+    t5 = time.time()
+    return [t2 - t1, t3 - t2, t4 - t3, t5-  t4]
+
+
 
 
 if __name__ == "__main__":
